@@ -1,0 +1,19 @@
+# Lint config for the lessons/ package.
+#
+#   python3 -m ruff check lessons/
+#   python3 -m ruff check lessons/ --fix
+#
+# Notebooks are checked separately — see "Verifying code style" in README.md.
+
+line-length = 88
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes — undefined names, unused imports
+    "I",   # isort — import order
+    "UP",  # pyupgrade — outdated syntax
+    "B",   # flake8-bugbear — likely bugs
+    "SIM", # flake8-simplify
+]

@@ -1,348 +1,475 @@
-# CCDV-F Study Guide — why each domain is on the exam
+# CCDV-F Study Guide
 
-Read this before the notebooks. The notebooks teach you *how*; this explains
-*why*, which is what makes the knowledge stick and what lets you reason through
-a scenario question you haven't seen before.
+**Claude Certified Developer – Foundations · Blueprint v1.0 (July 2026)**
+
+Loop for each section: **read → run the notebook → answer the self-check from memory.**
+One-page summary: [`02_CHEAT_SHEET.md`](02_CHEAT_SHEET.md). Old long version: `archive/STUDY_GUIDE_verbose.md`.
 
 ---
 
-## First: what the Reddit post is and isn't good for
+## 0. Exam basics
 
-I cross-mapped every topic that post reports onto the official blueprint skills.
+- **53 items · 120 min · pass 720 / 1000** · criterion-referenced (no curve)
+- Multiple-choice + multiple-response → **read how many to select**
+- Scenario-based: find the **one deciding clause** ("by morning", "must never", "data can't leave VPC")
+- No penalty for guessing → never leave blank; flag and move on (~2 min/item)
+- Score report: pass/fail + scaled score + % per domain (domain % is diagnostic only)
+- Valid 12 months · retakes wait 14d → 30d → 90d · max 4 per 12 months
+- Content is under NDA → don't paste exam questions into this public repo
 
-**It touches skills worth ~46% of the exam. It never mentions the other ~54%.**
+### Weights — study in this order
 
-Unmentioned, largest first:
+| § | Domain | Weight | ~Items | Notebook |
+|---|---|---|---|---|
+| 1 | D2 Applications & Integration | **33.1%** | 18 | 01 |
+| 2 | D5 Model Selection & Optimization | **16.8%** | 9 | 02 |
+| 3 | D1 Agents & Workflows | 14.7% | 8 | 03 |
+| 4 | D6 Prompt & Context Engineering | 11.0% | 6 | 04 |
+| 5 | D8 Tools & MCPs | 10.6% | 6 | 05 |
+| 6 | D7 Security & Safety | 8.1% | 4 | 06 |
+| 7 | D3 Claude Code | 3.1% | 2 | 07 |
+| 8 | D4 Eval, Testing, Debugging | 2.6% | 1 | 08 |
 
-| Weight | Skill |
+- **D2 + D5 = half the exam.**
+- Design/judgement skills outweigh API trivia. Generic engineering (REST, async, retries, config) is worth more than D1 and D4 combined.
+
+---
+
+## 0.5 API changes — old patterns are now wrong answers
+
+| Removed | Replacement |
 |---|---|
-| 8.6% | Claude Application Design |
-| 7.4% | Software Engineering Foundations |
-| 6.1% | Technical Fundamentals |
-| 5.2% | LLM Fundamentals |
-| 4.6% | Prompt Engineering |
-| 4.5% | Agent Architecture |
-| 4.1% | Configuration Management |
-| 4.1% | Agentic Customization |
-| 3.4% | Understanding Requirements |
-| 3.1% | Claude Code Operation |
-| 2.8% | Systems Life Cycle |
+| Assistant **prefill** (last message = `assistant`) → 400 | **Structured outputs** |
+| `temperature`, `top_p`, `top_k` | none — non-determinism is a fact, not a dial |
+| `thinking={"type":"enabled","budget_tokens":N}` | `thinking={"type":"adaptive"}` + `output_config={"effort":…}` |
 
-This isn't a knock on the post. It's one person recalling what stuck out after
-a 53-item exam, and what sticks out is what felt hard or novel — not what was
-routine. **A topic being absent from a recall post is not evidence it's absent
-from the exam.** Someone who found the software-engineering items easy wouldn't
-think to list them.
+- Structured output, two forms:
+  - `client.messages.parse(..., output_format=PydanticModel)` → `response.parsed_output`
+  - `client.messages.create(..., output_config={"format":{"type":"json_schema","schema":{…}}})`
+- Schema enforces **patterns, enums, bounds** too, not only JSON shape
+  - So validation loops now defend **business rules** (cross-field, checks vs. your data)
+- Still valid (not prefill): few-shot assistant turns **followed by** a user turn; appending the model's reply to history
+- Opus 5: thinking **on by default** (Opus 4.8/4.7: off if omitted)
+- `effort` is **model-gated** — Haiku 4.5 returns 400
+- Why it matters: D5 tests "breaking behaviour changes across releases"
 
-So: use the post to confirm that the high-weight technical areas really do show
-up in scenario form. Don't use it as a syllabus. The blueprint is the syllabus,
-and Section 6 of the exam guide is the authoritative version of it.
+### Models
 
-One caution on the practice-exam recommendation in that post. Third-party
-practice questions written against the public blueprint are normal and fine.
-A claim that "75–80% matched the real exam" describes something else — the exam
-content is confidential and non-disclosable under the NDA you accept before
-starting. Material that close to the live bank is a risk to whoever sourced it
-and potentially to your own standing if you're seen relying on it. Practice
-questions are for calibration; understanding is what passes.
+| Model | ID | Context | $/1M in / out |
+|---|---|---|---|
+| Opus 5 | `claude-opus-5` | 1M | 5 / 25 |
+| Sonnet 5 | `claude-sonnet-5` | 1M | 2 / 10 |
+| Haiku 4.5 | `claude-haiku-4-5` | **200K** | 1 / 5 |
+
+- Remember ratios: Sonnet ≈ 2.5× cheaper than Opus; Haiku ≈ 2× cheaper than Sonnet
+- Haiku's 200K window is an **architectural constraint** (long docs can't just move to Haiku)
 
 ---
 
-## The exam's actual theory of the candidate
+## 1. D2 — Applications & Integration (33.1%) · `notebooks/01`
 
-Two facts from the exam guide drive everything else.
+| Skill | Weight |
+|---|---|
+| Claude Application Design | 8.6% |
+| Software Engineering Foundations | 7.4% |
+| Claude API Mechanics | 6.8% |
+| Configuration Management | 4.1% |
+| Understanding Requirements | 3.4% |
+| Systems Life Cycle | 2.8% |
 
-**It's criterion-referenced.** You're measured against a fixed standard set by
-subject-matter experts describing a minimally qualified candidate — not graded
-on a curve against other candidates. There's no "beat the median" strategy.
-You either demonstrate the competencies or you don't.
+### API mechanics
+- `response.content` = **list of typed blocks** (`text`, `tool_use`, `thinking`…)
+  - `content[0].text` breaks when the model thinks or calls a tool first
+  - Use `"".join(b.text for b in content if b.type == "text")`
+- `system` = separate param for persistent role/rules; `messages` = conversation
+- **Streaming** → better perceived latency, avoids long-request timeouts. **Same cost.**
+- **Realtime vs Batch** — one question: *is a human waiting?*
+  - Batch = **50% off** input + output, done within 24 h
+  - Results unordered → match by **`custom_id`**
+  - Wrong answers for "10k docs overnight": parallel sync calls, lower `max_tokens`, blind model downsizing
+- Multi-format: `image` blocks (base64/URL), `document` blocks (PDF), Files API (upload once, reuse `file_id`), citations per document
+- **Bedrock / Vertex / Foundry**
+  - Own client class (not `base_url` override)
+  - Different model IDs and auth (Vertex = GCP ADC)
+  - **Feature availability not uniform** — likely exam angle
 
-**The cut score is 720 on a 100–1,000 scale, over 53 items in 120 minutes.**
-That's roughly 2 minutes 15 seconds per item, and the items are multi-paragraph
-scenarios. The blueprint is not distributed evenly, so a domain worth 2.6% is
-roughly one or two items. Time spent mastering Domain 4 to perfection while
-Domain 2 is shaky is time spent badly.
+### Software engineering foundations
+- Async = overlapping network waits (I/O-bound), not parallel compute
+  - Once rate-limited, concurrency stops helping
+- **Retry** with exponential backoff: `429`, `5xx`, connection, timeout
+- **Don't retry:** `400`, `401`, `403`, `404` (same error, more expensive)
+- SDK defaults: 2 retries (408/409/429/5xx), 10-min timeout → worst case `timeout × (retries + 1)`
+- Blanket `except APIError: retry` is a bug → catch most-specific first
 
-**What this means for how you study:** the exam is built around a person who
-*ships* Claude applications. Nearly every item gives you a situation with
-constraints — cost, latency, reliability, security — and asks which approach
-fits. The wrong answers aren't nonsense; they're things that *would* work in a
-different situation. You pass by recognising which constraint is binding, which
-is a skill you build by writing code and hitting the tradeoff yourself, not by
-memorising definitions.
+### Application design (heaviest skill)
+- Behaviour differs by **surface** (API is stateless; Claude Code brings CLAUDE.md, settings, skills)
+- **Content boundaries** are drawn at design time: delimit untrusted content, label it as data, say instructions inside are not to be followed
+- Schema + validate + repair; on failure send the **specific validation error** back (bare retry repeats the mistake)
+- Session hygiene: history is re-sent every request → decide what persists
 
-That's why the notebooks are structured as runnable code rather than flashcards.
+### Configuration management
+- **Pin the exact model ID** ("latest" = surprise)
+- Version prompts like code (reviewable diff, traceable to deploy)
+- Record model + max_tokens + prompt version as one unit
 
----
+### Requirements & life cycle
+- Split each scenario: **functional** / **infrastructure** / **quality** (speed, cost, reliability, privacy)
+- LLM behaviour can change with no code change (model update, prompt edit, input drift)
+  - → monitoring and evals are **operational**, not just pre-launch
 
-## Domain 2 — Applications and Integration (33.1%)
-
-**Why it's the biggest domain.** This is the job. A third of the exam is here
-because a third of the actual work of shipping a Claude app is ordinary software
-engineering applied to a non-deterministic dependency. The credential claims you
-can "independently own or significantly contribute to building, integrating, and
-shipping Claude-powered systems" — most of that is integration.
-
-**Why each skill is on the list:**
-
-*Claude API Mechanics (6.8%)* — Because the response object's shape determines
-whether your code survives contact with production. `response.content` is a list
-of typed blocks. Code that grabs `content[0].text` works in development and
-breaks the first time the model returns a thinking block or a tool call first.
-The exam tests whether you parse by type.
-
-*Software Engineering Foundations (7.4%)* — Because an LLM call is a network
-call to a slow, rate-limited, occasionally-failing remote service. Everything you
-know about async, retries, backoff, and error typing applies. The specific
-judgement the exam wants: which errors are worth retrying. A 429 is transient, so
-back off and retry. A 400 means your payload is malformed — retrying sends the
-same malformed payload and burns quota to fail identically.
-
-*Claude Application Design (8.6%)* — The single heaviest skill on the exam, and
-the one the Reddit post never mentions. It covers how Claude interprets
-instructions differently across Claude Code, Desktop, claude.ai, API, and SDKs;
-content boundaries; schema design; session hygiene. Why it's weighted so heavily:
-these are the decisions that are expensive to reverse. A bad schema or a missing
-trust boundary gets baked into a system and costs months.
-
-*Configuration Management (4.1%)* — Because models change. `claude-sonnet-5` is
-an alias that moves; `claude-haiku-4-5-20251001` is frozen. If production runs on
-an alias, a model release changes your output format on a random Tuesday and your
-parser breaks with no deploy in your git history to blame. Pinning, then
-upgrading deliberately behind an eval suite, is the discipline being tested.
-
-*Understanding Requirements (3.4%) and Systems Life Cycle (2.8%)* — Because the
-intended audience "operates at the intersection of business requirements and
-technical implementation." These items give you a business scenario and ask you
-to derive functional and infrastructure requirements. The reasoning move: find
-the constraint that eliminates options before any quality question is on the
-table. A data-residency requirement decides which endpoint you may call at all.
-
-**Reddit confirms:** Messages API requests, content blocks, prefilling; streaming
-vs. Batch. Both are API Mechanics. It says nothing about the two heaviest skills
-in the domain.
-
-→ Notebook `01`.
+### Self-check
+1. Why is `content[0].text` a latent bug?
+2. Chat feature too expensive — why isn't streaming the fix?
+3. 10k docs by morning, cost-sensitive: which API, why are the 3 alternatives wrong?
+4. Which codes retry, which don't, why?
+5. Provider ships a new model — 3 things that make it a non-event?
+6. What does `system` give you over a user message?
 
 ---
 
-## Domain 5 — Model Selection and Optimization (16.8%)
+## 2. D5 — Model Selection & Optimization (16.8%) · `notebooks/02`
 
-**Why it's second-heaviest.** Because this is where money is won and lost, and
-because the failure mode is invisible. Nobody files a bug report saying "we used
-Opus for a classification task and paid 5x too much." It just quietly happens.
+| Skill | Weight |
+|---|---|
+| Technical Fundamentals | 6.1% |
+| LLM Fundamentals | 5.2% |
+| Cost & Token Management | 2.8% |
+| Model Selection & Tradeoffs | 2.7% |
 
-*LLM Fundamentals (5.2%) and Technical Fundamentals (6.1%)* — Together 11.3%,
-and the Reddit post mentions neither. These cover tokens, context windows,
-sampling, non-determinism, extended thinking, and the fact that SDKs are wrappers
-over REST. Why it matters: non-determinism has a concrete consequence — **you
-cannot write a test that asserts exact string equality on model output.** You
-assert on structure and properties, and you measure a pass rate over several
-runs. Engineers who haven't internalised that write test suites that flake.
+- The two "fundamentals" (11.3%) outweigh "Model Selection" (2.7%) — don't only memorise the tier table
 
-*Cost and Token Management (2.8%)* — The two multipliers that carry most of the
-weight: Batch is 50% off input and output; a cache read is 0.1x base input while
-a 5-minute cache write is 1.25x. That second ratio has a clean consequence — a
-5-minute cache pays for itself after **one** read, a 1-hour cache after **two**.
-That's a fact you can reason from rather than memorise.
+### LLM fundamentals
+- Tokens: cost and limits are in tokens; window is shared by input + output
+- Use `messages.count_tokens` (model-specific) — don't estimate with a generic tokeniser
+- Non-deterministic → no exact-match tests; evals need multiple samples
+- **Adaptive thinking** — model decides when/how much to think
+- **Effort** — `low | medium | high (default) | xhigh | max`
+  - Main spend-vs-thoroughness lever within one model
+  - Low = subagents/simple; high+ = coding/long-horizon agents
+- **Fast mode** — same model, faster output, premium price (latency lever only)
+- **Thinking display** (summary vs omitted) — **doesn't change what is billed**
+  - "Hide thinking to save money" = wrong → lower `effort`
+- Zero / single / multi-shot: examples fix format & judgement boundaries; cost input tokens every call → cache them
 
-*Model Selection and Tradeoffs (2.7%)* — Haiku for simple work at volume, Sonnet
-as the production default, Opus for complex agentic reasoning. The exam's trap is
-always "use the most capable model." A scenario that specifies high volume and
-simple tasks is testing whether you'll downshift.
+### Technical fundamentals
+- SDK = convenience layer over REST (`x-api-key`, `anthropic-version`, JSON body)
+- Failures surface at HTTP level: status, `retry-after`, request ID
+- Streaming = server-sent events (one-way); websocket = bidirectional persistent connection
 
-**Reddit confirms:** model tier picking, prompt caching and breakpoint placement,
-token tracking. Silent on the 11.3% of fundamentals underneath.
+### Cost & token management
+- Cache = **prefix match**; render order `tools → system → messages`
+- **Any byte change in the prefix invalidates everything after it**
+- Design: stable first (system, sorted tools), volatile last (timestamps, IDs, the question)
+- Write ≈ **1.25×** · read ≈ **0.1×** · TTL 5 min (1 h available) · max 4 breakpoints
+- Verify via `usage.cache_read_input_tokens`; zero means silent invalidation:
+  1. `datetime.now()` in system prompt
+  2. Unsorted `json.dumps()`
+  3. Tool list changes between calls
+  4. Prefix under model minimum (~512–4096 tokens; no error raised)
+- **Lever order (free → costly):** cache → batch → trim input → lower effort → downgrade model
+- Measure cost **per completed task**, not per request
 
-→ Notebook `02`.
+### Model selection
+- **Opus** hardest / long-horizon agents · **Sonnet** balanced default · **Haiku** simple, high-volume, low-latency
+- Try **lower effort on a better model** before downgrading
+- Caches are model-scoped → multi-model cascades lose cache reuse
+- Defence against release changes: pin model + re-run evals
 
----
-
-## Domain 1 — Agents and Workflows (14.7%)
-
-**Why it's weighted heavily.** An agent is the hardest thing in the blueprint to
-get right, because it's a loop whose length the model decides at runtime. That's
-a category of failure ordinary software doesn't have.
-
-*Agent Architecture (4.5%)* — The decision the exam most wants you to get right
-is **workflow or agent**. A workflow runs steps you fixed in advance: cheap,
-testable, debuggable, no runaway risk. An agent decides its own steps: necessary
-when the number and order of steps depends on what's discovered mid-task, and
-strictly worse in every other case. The trap is reaching for an agent when a
-workflow would do.
-
-*Agent Construction (5.3%)* — Claude never executes a tool. It returns a
-`tool_use` block; your code runs the function and returns a `tool_result`. Four
-things the exam checks: append the *entire* content list including tool_use
-blocks; match every `tool_use` with a `tool_result` carrying the same id in the
-very next turn; handle *multiple* tool_use blocks (parallel calls); and bound the
-loop. That last one is the classic production failure — the Reddit post lists
-"forgetting to set strict loop limits" as a top mistake, and it's right.
-
-*Agent Patterns (4.9%)* — Supervisor/subagent exists for **context isolation**,
-not speed. Each subagent gets a clean narrow window instead of inheriting the
-whole conversation. Why that matters: a long shared context invites drift, costs
-more every turn, and lets stale content bias later answers. This is why the
-blueprint pairs subagents with context management rather than with performance.
-
-**Reddit confirms:** bounded loops with explicit step limits and stop conditions,
-coordinator vs. subagent context passing. Both match. It doesn't mention the
-workflow-vs-agent architecture decision, which is 4.5% on its own.
-
-→ Notebook `03`.
+### Self-check
+1. Adaptive thinking vs effort — which do you change to cut spend?
+2. Does hiding thinking cut cost?
+3. Cache hit rate zero — 3 checks in order?
+4. Rank cost levers.
+5. When is Haiku off the table regardless of budget?
+6. Why can a model cascade cost more than one model?
 
 ---
 
-## Domain 6 — Prompt and Context Engineering (11.0%)
+## 3. D1 — Agents & Workflows (14.7%) · `notebooks/03`
 
-**Why it's here and why it's capped at 11%.** Note what the exam guide says the
-credential is *not* for: "roles limited to prompt writing or other isolated tasks
-without broader application development responsibility." Prompting matters, but
-the exam deliberately refuses to let it dominate.
+| Skill | Weight |
+|---|---|
+| Agent Construction | 5.3% |
+| Agent Patterns & Frameworks | 4.9% |
+| Agent Architecture | 4.5% |
 
-*Prompt Engineering (4.6%)* — Placement is the core idea. Standing rules go in
-`system`; the task goes in the user turn. Two reasons: the model weights system
-content as standing instruction, and a stable system block is what prompt caching
-can reuse. The other high-value idea: when output format drifts, add examples,
-don't add adjectives. Few-shot examples teach format and edge-case policy more
-reliably than prose description.
+### Architecture
+- **Workflow** = steps fixed in advance; your code controls flow → predictable, cheap, testable
+- **Agent** = model chooses steps → flexible, but costlier, slower, harder to debug
+- **Test: can you write the steps down in advance?** Yes → workflow (agent = over-engineering)
+- Before choosing agent check: **complexity, value, viability, cost of error**
+- **Subagents** → context isolation: reads 50 files, returns a summary
 
-*Context Engineering (3.8%)* — Context grows every turn and tool results are the
-worst offender: verbose, and stale the moment they've been used. Pruning replaces
-old tool output with placeholders; compaction summarises old turns and drops the
-originals. Both fight context drift, the degradation that comes from a window
-crowded with irrelevant content.
+### Construction — the tool loop
+1. Send `messages` + `tools`
+2. `stop_reason == "tool_use"` with `tool_use` blocks
+3. Append the **full** `response.content` to history
+4. Execute each tool
+5. Append **one** user message with **all** `tool_result` blocks
+6. Repeat until `end_turn`
 
-*Output Handling (2.6%)* — The most important sentence in this domain, and the
-Reddit post's sharpest observation: **prompt engineering cannot replace code
-validation.** No prompt makes output reliable enough to consume unvalidated. You
-need two checks, and the exam wants both: structural (does it match the schema)
-and semantic (does it agree with your source of truth). A response can be
-perfectly well-formed JSON and still factually wrong. "Skepticism toward
-confident output" is a named blueprint skill for that reason.
+- Parallel calls: return all results in **one** message (splitting silently kills parallelism)
+- Tool failure → `tool_result` with **`is_error: true`** + description; never raise past the loop
 
-**Reddit confirms:** defensive JSON schemas, malformed output handling, long
-context without drift, and the "prompting isn't validation" mistake. Doesn't
-mention prompt engineering proper (4.6%).
+| Approach | Who writes loop | Who hosts | Built-in tools |
+|---|---|---|---|
+| Manual loop (Messages API) | you | you | none |
+| Tool Runner (`beta.messages.tool_runner`) | SDK | you | none |
+| **Managed Agents** (beta) | Anthropic | **Anthropic** | sandbox: bash/files/code |
+| Claude Agent SDK | SDK | you | Read/Write/Edit/Bash/Glob/Grep/WebSearch |
 
-→ Notebook `04`.
+- Only Managed Agents supplies deployment
+- **Tool Runner ≠ Agent SDK** (SDK = Claude Code as a library, Python/TS only)
+- Start simple: most tasks = one call or a workflow
 
----
+### Patterns & frameworks
+- Frameworks (Strands, LangGraph, PydanticAI) declare graph/state instead of hand-written loops → structure vs. indirection
+- Three answers to "context is filling":
+  - **Context editing** clears · **Compaction** summarises · **Memory** persists
 
-## Domain 8 — Tools and MCPs (10.6%)
+### Hooks
+- Fire on lifecycle events (pre-tool, post-response, session start); your code → always runs
+- **"Must never" → hook / code gate, not a prompt** (prompts are probabilistic)
 
-*Tool Implementation (4.4%)* — The tool `description` **is** a prompt. It's how
-the model decides whether and when to call the tool. Vague descriptions cause
-wrong-tool selection, which is why "tool description writing" is a named skill. A
-good description states what it does, the exact input format with an example,
-what it returns, and when *not* to call it versus a similar tool.
+### Managed vs self-hosted
+- Self-hosted: max control, max ops burden
+- Anthropic-hosted: less ops, versioned configs, long sessions, scheduling
+- "Data can't leave our environment" → self-hosted
 
-*MCP Server Development (2.1%)* — Small weight, high trap density. The three
-roles: **Host** is the application that owns the conversation (Claude Code, your
-app); **Client** lives inside the host and manages one connection to one server;
-**Server** exposes capabilities and is *called*, never the caller. The error the
-Reddit post flags — "getting MCP server roles mixed up with application-side API
-clients" — is exactly the one the exam sets up. Your code that calls the Claude
-API is the host, not a server.
-
-*Agentic Customization (4.1%)* — Twice the weight of MCP server development, and
-unmentioned by the post. Given a need, which mechanism: built-in tool, custom
-tool, Skill, or MCP server? Two hinges decide it. **Reuse across applications** →
-MCP server, because a custom tool duplicated in five codebases is five places to
-fix a bug. **Knowledge versus action** → a Skill teaches Claude how your team
-does something; a tool gives it the ability to do something external.
-
-**Reddit confirms:** typed tool definitions, parallel tool calls, MCP host/client/
-server roles, resource and tool discovery.
-
-→ Notebook `05`.
+### Self-check
+1. Workflow-vs-agent test in one sentence?
+2. Why all `tool_result`s in one message?
+3. Tool throws — what do you send back?
+4. Four ways to build an agent; which supplies deployment?
+5. "Must never" action — where does the control live?
+6. Clear / summarise / persist → which technique?
 
 ---
 
-## Domain 7 — Security and Safety (8.1%)
+## 4. D6 — Prompt & Context Engineering (11.0%) · `notebooks/04`
 
-**Why it earns 8% in a developer exam.** Because an LLM that reads untrusted
-content and can call tools is a new class of attack surface, and the standard
-engineering instincts don't cover it.
+| Skill | Weight |
+|---|---|
+| Prompt Engineering | 4.6% |
+| Context Engineering | 3.8% |
+| Output Handling | 2.6% |
 
-*AI Application Security (3.2%)* — **Indirect** prompt injection is the hard
-problem: the attack is hidden in content your system fetched — a web page, a PDF,
-a customer-controlled database field — so no human reviewed the payload. The
-exam's own sample question gives the answer: isolate untrusted content from
-trusted instructions, and enforce least privilege so injected text can't reach a
-sensitive tool.
+### Prompt engineering
+- **Placement:** persistent behaviour → `system`; request → user; examples before real input
+- System prompt = stable cache prefix too (good placement = good caching)
+- Few-shot beats prose for format, tone, judgement boundaries
+- Output constraints: state exact shape ("one word: APPROVE/DENY/REVIEW") + low `max_tokens`; strongest = structured outputs
+- Sanitise untrusted input: escape look-alike delimiters, cap length, wrap as data
+  - **Necessary, not sufficient**
 
-Three wrong answers worth recognising on sight, from that same sample: raising
-temperature (unrelated to injection), asking users not to inject (not an
-enforceable control), and using a bigger model — which the guide explicitly notes
-can be *more* susceptible, because better instruction-following means better
-following of the injected instruction too.
+### Context engineering
+- Stateless API → history re-sent → tool results dominate tokens → **cost, latency, drift**
+- **Prune** — replace superseded tool results with placeholders
+- **Compact** — summarise (server-side on current models)
+  - Must append full `response.content` — text-only loses the compaction state
+- **Isolate** — subagent does heavy reading, returns summary (**prevents** bloat rather than cleaning it)
 
-*Guardrails and Safe Deployment (2.3%) and Claude Hooks (1.0%)* — The reason
-these are separate from the prompt-level defence: **a prompt-level rule can be
-argued around; an `if` statement cannot.** A hook intercepts a tool call before
-execution and blocks it in code. Layer both — the prompt reduces the chance the
-model is fooled, the hook makes it not matter when it eventually is. That's
-defence in depth, and it assumes the earlier layer will fail.
+### Output handling
+- **Structural** — well-formed, matches schema
+- **Semantic** — content actually right (amount exists in source?)
+- **Coverage** — did it handle all items or silently drop some?
+- **Fluent, confident output ≠ correct**
 
-*Identity, Secrets, and Key Management (1.6%)* — One rule carries it: a secret
-never enters a prompt. Context gets logged, cached, traced, and echoed back. A
-key in context is a key in every log and trace that context touches.
-
-**Reddit confirms:** indirect injection when parsing untrusted web content and
-PDFs, intercepting unsafe tool calls with hooks, HITL approval gates for risky
-writes, credentials outside prompt contexts, and "skimping on security
-permissions around tool execution" as a top mistake. The strongest agreement
-between the post and the blueprint of any domain.
-
-→ Notebook `06`.
+### Self-check
+1. Why does `system` placement help caching?
+2. What is context drift; 3 fixes?
+3. Server-side compaction: what must you append, what breaks otherwise?
+4. Three validation layers + one failure each catches uniquely?
+5. Why is sanitisation necessary but not sufficient?
 
 ---
 
-## Domain 3 — Claude Code (3.1%) and Domain 4 — Eval/Debugging (2.6%)
+## 5. D8 — Tools & MCPs (10.6%) · `notebooks/05`
 
-Together 5.7% — roughly three items. Budget your time accordingly, but don't skip
-them, because they're cheap to learn.
+| Skill | Weight |
+|---|---|
+| Tool Implementation | 4.4% |
+| Agentic Customization | 4.1% |
+| MCP Server Development | 2.1% |
 
-*Claude Code Operation (3.1%)* — Mostly precedence and component roles. The
-CLAUDE.md hierarchy layers enterprise → project → project-local → user, more
-specific winning. The distinction the exam presses: a **Command** is user-invoked
-(`/name`), a **Skill** is model-invoked when relevant, and a **Subagent** exists
-for context isolation — a fresh window, not just a different prompt. Headless mode
-(`claude -p`) is the CI/CD answer, because a pipeline has no terminal to type into.
+### Tool implementation
+- **Tool description = a prompt.** Model sees name + description + schema, never the code
+- Say **when to use and when not to**; overlapping tools → unreliable selection
+- **Client-side:** model emits `tool_use` → you run it → `tool_result`; you own execution + security boundary
+- **Server-side** (web search, web fetch, code exec): Anthropic runs it, no loop on your side, less control
+  - Server-tool errors are HTTP 200 with an error object
+- **Approval gate** between model request and execution for risky calls (same idea as hooks, D7 gates)
+- Fewer, crisper tools; large sets → tool search + `defer_loading`
 
-*Debugging and Error Handling (2.6%)* — The whole skill is **isolating the
-problem origin**: integration layer or model output? They need opposite fixes and
-confusing them wastes days. A `TypeError` unpacking `tool_use.input` means your
-schema and function signature disagree — the model did exactly what the schema
-said, so that's your bug. A model citing a policy clause that doesn't exist is
-model output — inputs were fine, reasoning wasn't.
+### MCP
+- Roles: **host** (app) · **client** (connector) · **server**
+- Server exposes:
+  - **Tools** — model-controlled
+  - **Resources** — application-controlled (URI-addressed data)
+  - **Prompts** — user-controlled templates
+- Transports: **stdio** (local subprocess) · **HTTP** (remote / shared)
+- Why MCP: **reusable across apps** + **independently maintained**
+- API connector needs both `mcp_servers` **and** `mcp_toolset` entries
 
-The Reddit post's "feed structured error messages back so it can fix itself"
-lands here: a retry that resends the original prompt without saying what was
-wrong usually reproduces the same failure. Append the validation error so the
-next attempt has new information.
+### Agentic customization — how to choose
+1. **Built-in tool** — if Anthropic provides it (can't reach internal APIs!)
+2. **Custom tool** — specific to one app you control
+3. **Skill** — procedural knowledge (checklist, process), loads on demand
+4. **MCP server** — must be shared across apps and maintained independently
 
-→ Notebooks `07` and `08`.
+### Self-check
+1. Why is a tool description a prompt?
+2. Client-side vs server-side — what do you write, what do you give up?
+3. Tools / resources / prompts — who controls each?
+4. stdio vs HTTP?
+5. Which two phrases point to MCP?
+6. When is a Skill right instead of a tool?
 
 ---
 
-## How to work through this
+## 6. D7 — Security & Safety (8.1%) · `notebooks/06`
 
-1. **Read this guide.** The *why* is what lets you reason through an unfamiliar
-   scenario instead of pattern-matching.
-2. **Run the notebooks in order** — they're weighted, so `01`–`03` cover ~65% of
-   the exam.
-3. **Break things deliberately.** Remove the turn limit and watch a loop run.
-   Send only the first of two parallel tool results and read the 400. Pass a
-   schema field name your function doesn't accept. The error messages are the
-   lesson — Domain 4 is asking you to recognise these on sight.
-4. **Build one small end-to-end app** — the exam guide's own recommendation. API
-   call, one or two tools, prompt and context engineering, a guardrail, an eval.
-   Every domain touches it.
-5. **Practice the clock.** ~2m15s per multi-paragraph scenario. Read for the
-   binding constraint first — cost, latency, reliability, or security — because
-   that's usually what separates two otherwise-plausible answers.
+| Skill | Weight |
+|---|---|
+| AI Application Security | 3.2% |
+| Guardrails & Safe Deployment | 2.3% |
+| Identity, Secrets, Keys | 1.6% |
+| Claude Hooks | 1.0% |
 
-When a cell's output surprises you, stop there. That's the concept worth the
-time. Bring it back and we'll go deeper on it.
+### Prompt injection (headline threat)
+- Correct defence = **three parts**:
+  1. Treat retrieved content as **untrusted**
+  2. **Isolate** it from trusted instructions
+  3. **Guardrails** so injected text can't trigger sensitive actions
+- Wrong answers: raise temperature · "ask users not to" · bigger model
+  - Bigger / more instruction-following model can follow injections **better**
+- A clever injection can **satisfy your stated policy** → prompt hardening can't catch it
+  - Architecture does: **least privilege** + **deterministic gate**
+
+### Guardrails
+- **Layer** controls that fail differently: sanitise → prompt boundaries → constrained tools → deterministic gates → monitoring/logging
+- **Least privilege:** no payment tool → injection can't cause a payment
+- **Human approval** only for irreversible / costly / high-blast-radius actions (gating everything makes the system useless)
+- **PII:** redact → send → restore
+- Basics: authentication, authorization, confidentiality, privacy, integrity
+
+### Secrets
+- Keys in env vars / secrets manager, never in source
+- `.env` gitignored, `.env.example` committed
+- Separate keys per environment · rotate · least-privilege scope · monitor use
+- Keys also leak **via prompts** (pasted stack trace, tool output, agent reading `.env`) → scan outbound prompts
+
+### Hooks (1.0%)
+- Deterministic enforcement over a probabilistic system
+
+### Self-check
+1. Why can a more instruction-following model be worse against injection?
+2. Three parts of a correct defence?
+3. What does "the injected call meets the policy" show, and what stops it?
+4. Which actions get a human gate?
+5. Two ways keys leak that `.gitignore` misses?
+6. Least privilege in one sentence?
+
+---
+
+## 7. D3 — Claude Code (3.1%) · `notebooks/07`
+
+- CLAUDE.md is **additive** (all applicable levels stack, none override)
+  - Working dir and above load at launch; subdirs load when you work there
+  - `~/.claude/` = personal; repo = shared/committed
+  - Keep root small (~200 lines) — loaded every session
+
+| Component | Loads | Use for |
+|---|---|---|
+| CLAUDE.md | always | permanent facts (build cmds, layout, conventions) |
+| Rules | start, or on file match | specific constraints (path-scope to save tokens) |
+| Skills | description at start; body on use | procedures (deploy checklist) |
+| Subagents | description at start; body on call | isolated side task; summary returns |
+| Commands | `/name` | user-triggered actions |
+| Hooks | lifecycle events | deterministic guardrails |
+| Plugins | packaging | bundle of skills/hooks/subagents/MCP |
+
+- **Procedures → Skills**, not CLAUDE.md
+- **Guarantees → Hooks**, not prompts
+- `settings.json` (user/project/local): hooks, permissions, env
+- Modes: interactive · **headless** (`-p --output-format json`, scripts/CI) · streaming · auto-mode
+- Agent memory = persists across sessions (context window is per-session)
+
+### Self-check
+1. CLAUDE.md additive or overriding?
+2. Deploy checklist — CLAUDE.md or skill?
+3. What does a subagent give that a skill doesn't?
+4. When use headless mode?
+5. Where are hooks registered?
+
+---
+
+## 8. D4 — Eval, Testing, Debugging (2.6%) · `notebooks/08`
+
+- Core question: **is it my code or the model?**
+- **Integration failures** — deterministic: 400, parse error, retry storm, wrong model ID, missing tool result → fix in code
+- **Model failures** — probabilistic: well-formed but wrong, right 4/5 times, regressed after prompt/model change → fix with prompts, examples, schemas, model
+- **Diagnostic: run the same input several times.** Identical failure → integration · intermittent → model
+- **Trace per turn:** what was sent, what came back, `stop_reason`, tools + args, token usage
+- **Testing non-deterministic output** — can't exact-match; assert:
+  - **Structure** (schema, fields, ranges)
+  - **Properties** (no PII, length cap, cites only supplied docs)
+  - **Rates** (k of N pass)
+  - **LLM judge** for qualitative criteria (validate the judge too)
+- **Recovery:** retry transient · repair with the specific error · escalate real ambiguity · fail loudly
+
+### Self-check
+1. The one diagnostic separating integration from model bugs?
+2. Why no exact-match tests; 3 alternatives?
+3. What does a trace record per turn?
+4. Output is schema-valid but wrong — which layer, which fixes?
+
+---
+
+## 9. Trap table
+
+| Trap | Truth |
+|---|---|
+| Streaming reduces cost | Latency only |
+| Hiding thinking saves money | Billed anyway → lower `effort` |
+| `response.content[0].text` | Filter by `type` |
+| Bigger model resists injection | Follows injections better too |
+| Strong prompt prevents action | Only hook / code gate is deterministic |
+| Built-in tools reach internal APIs | Use MCP / custom tool |
+| Parallel sync requests are cheaper | Batch is (50%, ≤24 h) |
+| Retry every failure | Only 429 / 5xx / network |
+| Well-formatted = correct | Validate structure, semantics, coverage |
+| Lower `max_tokens` cuts cost | Truncates → cache / batch / effort |
+| Downgrade model first | Last lever |
+| Prefill / temperature / `budget_tokens` | Removed |
+
+---
+
+## 10. Study plan (time ∝ weight)
+
+1. **Understand (~60%)** — §1 → §8 in order: read, run notebook, break something, answer self-check without peeking
+   - Sessions: D2 ×3 · D5 ×2 · D1 ×2 · D6/D8/D7 ×1–2 each · D3 + D4 ×1 together
+2. **Build (~25%)** — one end-to-end Claude app: API + tools + prompt/context engineering + security + evals
+   - Warm-up: convert a raw JSON-Schema cell to `messages.parse()` + Pydantic (or reverse)
+3. **Consolidate (~15%)** — self-assess against all 23 skills; anything you can't explain in 2 sentences goes back to step 1
+   - Work the 3 official sample questions; explain why each **wrong** answer is wrong
+
+---
+
+## 11. Exam day
+
+- ID: valid government photo ID, name matches registration exactly
+- Online: stay in webcam view; clear desk; no notes, phones, watches, headphones, 2nd monitor
+- Reschedule/cancel ≥24 h before or forfeit fee
+- Multi-response: read the **required count** first
+- One clause usually decides the item — find it
+- Flag, move on, come back; guess if needed
+
+### Last-minute recall
+- **D2 + D5 = 50%**
+- Batch −50% ≤24h · retry 429/5xx only · cache = prefix, read 0.1×
+- `effort` = spend lever · thinking display = free of cost effect
+- Workflow if steps known · one user msg for all `tool_result`s · `is_error:true`
+- MCP = shared + independently maintained · Skill = procedure · Hook = "must never"
+- Injection = untrusted + isolated + gated · least privilege
+- Same input repeated → identical = my code, intermittent = model

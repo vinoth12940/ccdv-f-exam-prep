@@ -11,7 +11,8 @@ material is written against the publicly published exam guide blueprint.
 
 | File | Domain | Blueprint weight |
 |---|---|---|
-| [`00_STUDY_GUIDE.md`](00_STUDY_GUIDE.md) | **Read first** — why each domain is tested | — |
+| [`00_STUDY_GUIDE.md`](00_STUDY_GUIDE.md) | **Read first** — every domain in bullets, with self-checks | — |
+| [`02_CHEAT_SHEET.md`](02_CHEAT_SHEET.md) | One page to skim on exam morning | — |
 | [`notebooks/01_domain2_applications_and_integration.ipynb`](notebooks/01_domain2_applications_and_integration.ipynb) | Applications and Integration | 33.1% |
 | [`notebooks/02_domain5_model_selection_and_optimization.ipynb`](notebooks/02_domain5_model_selection_and_optimization.ipynb) | Model Selection and Optimization | 16.8% |
 | [`notebooks/03_domain1_agents_and_workflows.ipynb`](notebooks/03_domain1_agents_and_workflows.ipynb) | Agents and Workflows | 14.7% |
@@ -23,14 +24,33 @@ material is written against the publicly published exam guide blueprint.
 
 Notebooks `01`–`03` cover roughly 65% of the exam by weight.
 
+## Prefer plain Python? Use [`lessons/`](lessons/)
+
+The same material as 47 small, self-contained `.py` files — one concept each,
+numbered in exam-weight order. Average 84 lines. No Jupyter needed.
+
+```bash
+cd lessons
+export ANTHROPIC_API_KEY=sk-ant-...
+python3 01_response_blocks.py
+```
+
+Each file opens with a docstring explaining the concept and its exam trap, then
+the code, then an `if __name__ == "__main__":` demo. [`lessons/README.md`](lessons/README.md)
+is the index and study order. `lessons/common.py` holds the client, the model
+IDs and `extract_text()`.
+
+**Pick one source of truth.** `lessons/` was derived from the notebooks and is
+maintained separately — edits on one side do not flow to the other.
+
 ## What makes this different
 
 - **No fill-in-the-blanks.** Every cell runs as written. Read the concept, run
   it, then change something and run it again.
 - **One running domain.** An insurance-claims scenario carries through all eight
   notebooks, so you're not re-reading a new setup every cell.
-- **The *why*, not just the *how*.** `00_STUDY_GUIDE.md` explains what each
-  blueprint domain is actually testing and why it earns its weight.
+- **Skimmable.** `00_STUDY_GUIDE.md` is bullets and tables — what each blueprint
+  domain tests, the traps, and self-check questions per domain.
 - **Lint clean.** All code passes `ruff check` at 88 columns, with type hints
   and docstrings throughout.
 
@@ -70,6 +90,17 @@ exam tests the shape of the calculation and the relative ordering of tiers, not
 the digits.
 
 ## Verifying code style
+
+`lessons/` is lint-clean under the config in [`ruff.toml`](ruff.toml)
+(pycodestyle, pyflakes, isort, pyupgrade, bugbear, simplify at 88 columns):
+
+```bash
+pip install ruff
+ruff check lessons/          # passes
+ruff check lessons/ --fix    # after you edit a lesson
+```
+
+The notebooks are checked separately, since they are JSON:
 
 ```bash
 pip install ruff nbconvert
